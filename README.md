@@ -14,12 +14,23 @@ The copy is a little late (about 23 ms, plus whatever Ableton adds). The MPC's o
 
 ## Mac helper
 
-From `mac/`:
+A small window stays open and says what Stream is doing: waiting, how many tracks, the delay, or that the MPC went quiet. The menu bar shows the same line. Leave it open. Quit it and Ableton goes silent.
+
+On the Mac, from `mac/`:
+
+```
+make app
+open Stream.app
+```
+
+The terminal helper is the same player, without the window:
 
 ```
 make
 ./play
 ```
+
+Do not run both. They both listen on port 47703, and the second one will say the port is taken.
 
 `./play --ms 12` asks for a shorter delay. `./play --selftest` checks that a late pair still lands on the same sample as the others.
 

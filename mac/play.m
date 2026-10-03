@@ -26,6 +26,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "stream.h"
+
 #define PORT 47703
 #define SRC_RATE 44100.0
 #define PAIRS 32
@@ -387,11 +389,141 @@ static void list_pairs(uint32_t mask, char *out, size_t len) {
         if (mask & (1u << p)) used += (size_t)snprintf(out + used, len - used, "%s%d", used ? " " : "", p + 1);
 }
 
+/* What the menu-bar window shows. The play head does not read this. */
+typedef struct {
+    char menu[64];
+    char head[160];
+    char body[640];
+    int level;
+} StreamView;
+
+static StreamView views[2];
+static atomic_uint view_i;
+
+static void publish_view(StreamView v) {
+    unsigned next = atomic_load_explicit(&view_i, memory_order_relaxed) ^ 1u;
+    views[next] = v;
+    atomic_store_explicit(&view_i, next, memory_order_release);
+}
+
+int stream_copy_status(char *menu, size_t mn, char *head, size_t hn, char *body, size_t bn) {
+    unsigned i = atomic_load_explicit(&view_i, memory_order_acquire);
+    StreamView v = views[i];
+    if (!v.menu[0]) snprintf(v.menu, sizeof v.menu, "Stream");
+    if (!v.head[0]) snprintf(v.head, sizeof v.head, "Starting");
+    snprintf(menu, mn, "%s", v.menu);
+    snprintf(head, hn, "%s", v.head);
+    snprintf(body, bn, "%s", v.body);
+    return v.level;
+}
+
+static void add_line(char *body, size_t len, const char *line) {
+    size_t n = strlen(body);
+    if (!line || !line[0] || n + 2 >= len) return;
+    if (n) body[n++] = '\n';
+    snprintf(body + n, len - n, "%s", line);
+}
+
+static uint32_t newest_audio_ms(void) {
+    uint32_t best = 0;
+    int p;
+    for (p = 0; p < PAIRS; p++) {
+        uint32_t s = atomic_load(&lanes[p].last_ms);
+        if (!s) continue;
+        if (!best || (int32_t)(s - best) > 0) best = s;
+    }
+    return best;
+}
+
+static void rate_words(double rate, char *out, size_t len) {
+    if (rate < 1000) {
+        snprintf(out, len, "BlackHole 64ch is not responding.");
+        return;
+    }
+    if (rate > 44099.0 && rate < 44101.0)
+        snprintf(out, len, "BlackHole 64ch, 44100 Hz, same as the MPC.");
+    else
+        snprintf(out, len,
+                 "BlackHole 64ch is at %.0f Hz. Set Ableton to 44100. At another rate Ableton can stop hearing Stream.",
+                 rate);
+}
+
+static void status_problem(const char *head, const char *body) {
+    StreamView v;
+    memset(&v, 0, sizeof v);
+    snprintf(v.menu, sizeof v.menu, "Stream · problem");
+    snprintf(v.head, sizeof v.head, "%s", head);
+    snprintf(v.body, sizeof v.body, "%s", body);
+    v.level = 2;
+    publish_view(v);
+}
+
+static void note_status(AudioDeviceID dev, unsigned packets_per_s, const char *warn, int late, int jumped) {
+    StreamView v;
+    char pairs[128], rateb[240];
+    int nt = atomic_load(&ntracks);
+    double rate = dev ? device_rate(dev) : 0;
+    uint32_t seen = newest_audio_ms();
+    uint32_t t = now_ms();
+    int age_ms = seen ? (int)(t - seen) : -1;
+    int delay_ms = (int)(atomic_load(&delay_frames) * 1000.0 / SRC_RATE + 0.5);
+    int steady = atomic_load(&stable);
+    int legacy = atomic_load(&saw_legacy);
+    int rate_off = rate > 1000.0 && (rate < 44099.0 || rate > 44101.0);
+    memset(&v, 0, sizeof v);
+    list_pairs(atomic_load(&pairmask), pairs, sizeof pairs);
+    rate_words(rate, rateb, sizeof rateb);
+
+    if (dev && !find_blackhole()) {
+        snprintf(v.menu, sizeof v.menu, "Stream · no BlackHole");
+        snprintf(v.head, sizeof v.head, "BlackHole 64ch disappeared");
+        snprintf(v.body, sizeof v.body,
+                 "Ableton cannot hear Stream without that device.\nTurn BlackHole 64ch back on, then open Stream again.");
+        v.level = 2;
+        publish_view(v);
+        return;
+    } else if (nt > 0) {
+        snprintf(v.menu, sizeof v.menu, "Stream · %d", nt);
+        snprintf(v.head, sizeof v.head, "%d track%s, %s", nt, nt == 1 ? "" : "s", steady ? "steady" : "settling");
+        snprintf(v.body, sizeof v.body, "Pair%s %s.\nDelay about %d ms.\n%s\n%d packets a second.",
+                 nt == 1 ? "" : "s", pairs[0] ? pairs : "?", delay_ms, rateb, packets_per_s);
+        v.level = steady ? 0 : 1;
+    } else if (seen && age_ms > (int)ACTIVE_MS) {
+        int sec = age_ms / 1000;
+        if (sec < 1) sec = 1;
+        snprintf(v.menu, sizeof v.menu, "Stream · quiet");
+        snprintf(v.head, sizeof v.head, "The MPC went quiet");
+        snprintf(v.body, sizeof v.body,
+                 "Ableton goes silent while nothing is arriving.\nLast audio %d second%s ago.\nStill listening on the USB cable, port 47703.\n%s",
+                 sec, sec == 1 ? "" : "s", rateb);
+        v.level = 2;
+    } else {
+        snprintf(v.menu, sizeof v.menu, "Stream · waiting");
+        snprintf(v.head, sizeof v.head, "Waiting for the MPC");
+        snprintf(v.body, sizeof v.body,
+                 "Plug the MPC in with the USB cable, not Wi-Fi.\nOne Stream on each track. Leave this open.\n%s", rateb);
+        v.level = 1;
+    }
+    if (nt > 0 && rate_off) {
+        snprintf(v.menu, sizeof v.menu, "Stream · %.0f Hz", rate);
+        v.level = 2;
+    }
+    if (legacy) add_line(v.body, sizeof v.body, "Old Stream build. Take Stream off the track and put it back.");
+    if (warn && strstr(warn, "TWO STREAMS"))
+        add_line(v.body, sizeof v.body, "Two Streams are on the same pair. Give each track its own pair.");
+    if (late) add_line(v.body, sizeof v.body, "The copy is running late, so Ableton can drop out for a moment.");
+    if (jumped) add_line(v.body, sizeof v.body, "The play head jumped to catch up.");
+    publish_view(v);
+}
+
 static int serve(AudioDeviceID dev) {
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
     uint32_t last_mask = 0;
     double last_rate = out_rate;
-    if (sock < 0) return 1;
+    if (sock < 0) {
+        status_problem("Could not listen on port 47703", "Quit Stream and open it again.");
+        return 1;
+    }
     int yes = 1;
     setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes);
     struct sockaddr_in addr;
@@ -401,6 +533,8 @@ static int serve(AudioDeviceID dev) {
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
     if (bind(sock, (struct sockaddr *)&addr, sizeof addr) != 0) {
         perror("bind");
+        status_problem("Port 47703 is already taken",
+                       "Another Stream helper is running. Quit ./play, or quit the other Stream window, then open this again.");
         return 1;
     }
     int bufsz = 4 * 1024 * 1024;
@@ -408,6 +542,7 @@ static int serve(AudioDeviceID dev) {
     struct timeval tv = {.tv_sec = 0, .tv_usec = 200000};
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
     fprintf(stderr, "stream listening on udp %d, delay %.0f ms\n", PORT, cushion * 1000.0 / SRC_RATE);
+    note_status(dev, 0, "", 0, 0);
     time_t last = time(NULL);
     for (;;) {
         unsigned char buf[8 + 256 * 2 * sizeof(int16_t)];
@@ -444,13 +579,14 @@ static int serve(AudioDeviceID dev) {
                     atomic_load(&delay_frames) * 1000.0 / SRC_RATE, atomic_load(&cb_frames), npack, pk,
                     nunder ? "  late" : "", njump ? "  jumped" : "",
                     atomic_load(&saw_legacy) ? "  (old Stream build: take Stream off and back on)" : "", warn);
+            note_status(dev, npack, warn, nunder > 0, njump > 0);
             atomic_store(&saw_legacy, 0);
         }
     }
 }
 
-static int play(void) {
-    AudioDeviceID dev = find_blackhole();
+int stream_play(void) {
+    AudioDeviceID dev;
     AudioComponentDescription desc = {0};
     AudioComponent comp;
     AudioUnit unit = NULL;
@@ -458,8 +594,18 @@ static int play(void) {
     AURenderCallbackStruct cb;
     UInt32 size;
     OSStatus st;
+    StreamView starting;
+    memset(&starting, 0, sizeof starting);
+    snprintf(starting.menu, sizeof starting.menu, "Stream");
+    snprintf(starting.head, sizeof starting.head, "Starting");
+    snprintf(starting.body, sizeof starting.body, "Opening BlackHole 64ch.");
+    starting.level = 1;
+    publish_view(starting);
+    dev = find_blackhole();
     if (!dev) {
         fprintf(stderr, "BlackHole 64ch is not installed\n");
+        status_problem("BlackHole 64ch is not installed",
+                       "Install BlackHole 64ch, then open Stream again. Ableton's input has to be that device, not BlackHole 2ch.");
         return 1;
     }
     desc.componentType = kAudioUnitType_Output;
@@ -468,6 +614,7 @@ static int play(void) {
     comp = AudioComponentFindNext(NULL, &desc);
     if (!comp || AudioComponentInstanceNew(comp, &unit) != noErr) {
         fprintf(stderr, "could not open an output unit\n");
+        status_problem("Could not open BlackHole", "The helper is not playing. Quit Stream and open it again.");
         return 1;
     }
     UInt32 one = 1, zero = 0;
@@ -479,6 +626,7 @@ static int play(void) {
     st = AudioUnitGetProperty(unit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 0, &devfmt, &size);
     if (st != noErr || devfmt.mChannelsPerFrame < 2 || devfmt.mSampleRate < 1000) {
         fprintf(stderr, "BlackHole format unusable (%d)\n", (int)st);
+        status_problem("BlackHole's format is unusable", "Set BlackHole 64ch and Ableton both to 44100, then open Stream again.");
         return 1;
     }
     out_rate = devfmt.mSampleRate;
@@ -495,6 +643,7 @@ static int play(void) {
     st = AudioUnitSetProperty(unit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &fmt, sizeof fmt);
     if (st != noErr) {
         fprintf(stderr, "could not set the play format (%d)\n", (int)st);
+        status_problem("Could not set the play format", "Set BlackHole 64ch and Ableton both to 44100, then open Stream again.");
         return 1;
     }
     {
@@ -513,6 +662,7 @@ static int play(void) {
     AudioUnitSetProperty(unit, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, 0, &cb, sizeof cb);
     if (AudioUnitInitialize(unit) != noErr) {
         fprintf(stderr, "could not start BlackHole\n");
+        status_problem("Could not start BlackHole", "Quit Stream and open it again. Leave it open while Ableton is recording.");
         return 1;
     }
     /* Ask the Mac not to pause this process. A nap is what left the pairs late. */
@@ -523,6 +673,7 @@ static int play(void) {
     (void)keep_awake;
     if (AudioOutputUnitStart(unit) != noErr) {
         fprintf(stderr, "could not start BlackHole\n");
+        status_problem("Could not start BlackHole", "Quit Stream and open it again. Leave it open while Ableton is recording.");
         return 1;
     }
     fprintf(stderr, "playing into BlackHole 64ch, %.0f Hz%s, %u channels, 32 pairs\n", out_rate,
@@ -585,6 +736,7 @@ static int selftest(void) {
     return 0;
 }
 
+#ifndef STREAM_APP
 int main(int argc, char **argv) {
     int i;
     for (i = 1; i < argc; i++) {
@@ -596,5 +748,6 @@ int main(int argc, char **argv) {
             cushion = (uint32_t)(ms * SRC_RATE / 1000.0);
         }
     }
-    return play();
+    return stream_play();
 }
+#endif

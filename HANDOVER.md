@@ -36,9 +36,9 @@ Install path on the device is `/media/EOS_DIGITAL/Synths`, never `/sdcard/Synths
 
 ## Loose ends, in this order
 
-1. **License.** This repo has no LICENSE file. The catalog will not list it without one. MIT is what the other plugins on that site use. Ask Johnny before adding it. Do not assume.
+1. **License.** MIT is in the root `LICENSE`, copyright Johnny 2026. Leave that file as it is.
 
-2. **A helper a person can start without a terminal.** `make && ./play` is enough for him. For anyone else, a double-click Mac app that stays running (a menu-bar line is enough: listening, how many tracks, the delay) is the missing piece. Do not replace BlackHole with a new audio driver. BlackHole 64ch is the right dependency. Document it; do not bundle it.
+2. **Mac status window.** `mac/app.m` is the double-click helper (`make app`, then `open Stream.app`). The menu bar and the window say waiting, how many tracks, the delay, or that the MPC went quiet / BlackHole is missing or at the wrong rate. It runs the same `play.m` player. Do not run it at the same time as `./play` (both want UDP 47703). Do not replace BlackHole. Do not bundle BlackHole. Do not commit `Stream.app`.
 
 3. **Human setup, on one page.** USB cable, not Wi-Fi. BlackHole 64ch and Ableton both at 44100. Helper left open. One Stream per track, each with its own Pair. Input in Ableton is BlackHole 64ch only, not also the output. Level does not change the MPC.
 
