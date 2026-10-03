@@ -1,6 +1,6 @@
 # Stream
 
-An effect for the MPC. Put it on a track and that track still plays through the MPC. A copy is sent over the USB cable to a Mac, which plays it into [BlackHole 64ch](https://github.com/ExistentialAudio/BlackHole) so Ableton (or anything else) can record it.
+Stream is a multichannel USB audio effect send. It needs [BlackHole 64ch](https://github.com/ExistentialAudio/BlackHole) and a Mac helper app.
 
 One Stream per track. Pair 1 is BlackHole channels 1–2, pair 2 is 3–4, up to pair 32. Give every track its own pair. Two Streams on the same pair will fight, and the Mac keeps only one of them.
 
@@ -36,7 +36,3 @@ build_port.sh vst/vst.json
 ```
 
 That needs Docker. The skin photo is `vst/art/stream.jpg`. After you replace `stream.so` on a machine that already has Stream, take the plugin off the track and put it back. Do not restart the MPC app just to load a new file.
-
-## Not done yet
-
-See `HANDOVER.md`. This is not on the [MPC plugin catalog](https://sd88me.github.io/mpc-vst-plugins/) yet.
