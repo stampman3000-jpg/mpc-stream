@@ -1,0 +1,17 @@
+{
+  "name": "Stream",
+  "vendor": "johnny",
+  "uid": "Strm",
+  "version": 1000,
+  "so": "stream.so",
+  "params": "params.json",
+  "layout": "layout.conf",
+  "art": "html",
+  "effect": true,
+  "build": {
+    "root": "..",
+    "sources": ["src/stream.c"],
+    "cflags": ["-pthread"],
+    "libs": ["-pthread", "-lm"]
+  }
+}
