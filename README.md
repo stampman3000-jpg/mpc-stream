@@ -1,6 +1,6 @@
 # Stream
 
-Stream is a multichannel USB audio effect send. It needs [BlackHole 64ch](https://github.com/ExistentialAudio/BlackHole) and a Mac helper app.
+Stream is a multichannel USB audio effect send for multitracking to a DAW. 1 send per track, into a stereo pair on your computer. It runs smoothly with 8 tracks into a DAW and can handle more. It needs [BlackHole 64ch](https://github.com/ExistentialAudio/BlackHole) and a Mac helper app.
 
 One Stream per track. Pair 1 is BlackHole channels 1–2, pair 2 is 3–4, up to pair 32. Give every track its own pair. Two Streams on the same pair will fight, and the Mac keeps only one of them.
 
