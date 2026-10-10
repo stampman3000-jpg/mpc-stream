@@ -24,11 +24,14 @@ make && make selftest
 
 Needs CoreAudio as well as AudioToolbox. The selftest must keep saying the late pair lands on the same frame.
 
-MPC plugin, from a checkout of sd88me/mpc-vst-plugins (Docker running):
+MPC plugin, from a checkout of sd88me/mpc-vst-plugins (Docker running). The VST2 wrapper and `VSTPluginMain` come from that repo's `tools/build_port.sh`, not from this one. `vst/vst.json` lists armv7 and aarch64. The README BUILD section has the exact image, compiler, and flags for each (`arm32v7/gcc:12` / `arm-linux-gnueabihf`, and `arm64v8/gcc:12`).
 
 ```
-build_port.sh /path/to/mpc-stream/vst/vst.json
+build_port.sh "$STREAM/vst/vst.json" armv7
+build_port.sh "$STREAM/vst/vst.json" aarch64
 ```
+
+A compile check of the engine alone, for Gen2, is `aarch64-linux-gnu-gcc` on `src/stream.c` with `-march=armv8-a -mabi=lp64` (the README has the full line). That `.so` has no `VSTPluginMain`. Do not commit it.
 
 Do not run the host test (`test_port.sh`) and treat a crash as a Stream bug. That test calls an effect with no input buffer. `clang -DSTREAM_TEST` on `src/stream.c` is the real plugin check. The effect warning about `render_frames` being unused means the build is an effect, which is correct.
 
@@ -42,7 +45,7 @@ Install path on the device is `/media/EOS_DIGITAL/Synths`, never `/sdcard/Synths
 
 3. **Human setup, on one page.** USB cable, not Wi-Fi. BlackHole 64ch and Ableton both at 44100. Helper left open. One Stream per track, each with its own Pair. Input in Ableton is BlackHole 64ch only, not also the output. Level does not change the MPC.
 
-4. **A GitHub release zip**, only after the license exists. From mpc-vst-plugins: `tools/release.py` with the built `.so`, the skin folder, `pluginlist-entry.xml`, version, `--repo`, and `--license`. The zip asset the catalog expects is named `*-mpc-armv7.zip`. Do not commit `vst/build/` or the `play` binary.
+4. **A GitHub release zip**, only after Johnny merges and tags. Do not tag or publish a release yourself. From mpc-vst-plugins: `tools/release.py` with the built `.so`, the skin folder, `pluginlist-entry.xml`, version, `--repo`, and `--license`. Run it once per architecture. The zip assets are `*-mpc-armv7.zip` and `*-mpc-aarch64.zip` on the same release. A 32-bit package registers in `pluginList-arm`. An aarch64 package registers in `pluginList-arm-64bit`. This repo has no installer; the README install section says so. Do not commit `vst/build/` or the `play` binary.
 
 5. **Catalog.** Do not open a pull request on `sd88me/mpc-vst-plugins` unless Stampman3000 says to. When he does, the entry is one `catalog/plugins/stream.json`: kind `effect`, style `utility`, repo this one, the license you added. No checksums in that file. His MPC One at 44100 is the machine it was tested on.
 
