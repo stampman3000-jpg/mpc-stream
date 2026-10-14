@@ -8,10 +8,13 @@
   "layout": "layout.conf",
   "art": "html",
   "effect": true,
+  "targets": ["armv7", "aarch64"],
   "build": {
     "root": "..",
     "sources": ["src/stream.c"],
     "cflags": ["-pthread"],
+    "cflags_arm": ["-march=armv7-a", "-mfpu=vfpv3-d16", "-mfloat-abi=hard"],
+    "cflags_aarch64": ["-march=armv8-a", "-mabi=lp64"],
     "libs": ["-pthread", "-lm"]
   }
 }
