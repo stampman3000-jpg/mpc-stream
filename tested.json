@@ -1,8 +1,16 @@
 [
   {
+    "id": "stream",
     "version": "1.0.0",
     "device": "MPC One",
     "firmware": "3.9.1.2",
     "date": "2026-10-10"
+  },
+  {
+    "id": "stream",
+    "version": "1.0.1",
+    "device": "MPC One",
+    "firmware": "3.10.1",
+    "date": "2026-11-21"
   }
 ]
